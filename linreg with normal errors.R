@@ -1,46 +1,25 @@
 library("rstan")
 library('Metrics')
-library('MASS')
-source("auxiliary_functions.R")
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
 
 # --------------------------
-# ШАГ 1. Генерируем данные 
-# y_1 ~ b_10 + b_11 * x_11 + b_12 * x_12
-# y_2 ~ b_20 + b_21 * x_21 + b_22 * x_22
+# ШАГ 1. Генерируем данные y ~ b_0 + b_1 * x_1 + b_2 * x_2
 # --------------------------
 
 N <- 1000                                 # Число наблюдений
-n_iters <- 2                              # Число симуляций
+n_iters <- 100                            # Число симуляций
 
-x_11 <- runif(n = N, min = 0, max = 1)    # Генерируем регрессоры из равномерного распределения 
-x_12 <- runif(n = N, min = 0, max = 1)  
+x_1 <- runif(n = N, min = 0, max = 1)     # Генерируем x_1, x_2 из равномерного распределения 
+x_2 <- runif(n = N, min = 0, max = 1)  
 
-x_21 <- runif(n = N, min = 0, max = 1) 
-x_22 <- runif(n = N, min = 0, max = 1) 
-x_23 <- runif(n = N, min = 0, max = 1) 
+X <- cbind(1, x_1, x_2)                   # Аггрегируем все регрессоры => получаем реализацию выборки
 
-X_1 <- cbind(1, x_11, x_12)               # Аггрегируем все регрессоры => получаем реализацию выборки
-X_2 <- cbind(1, x_21, x_22, x_23)
+beta <- matrix(c(-5, 2, 10), nrow = 3)    # Задаем реальные значения alpha, b_0, b_1
 
-beta_1 <- matrix(c(-5,2,10), nrow=3)      # Задаем реальные значения b_0, b_1, b_2 для каждого уравнения системы
+epsilon <- rnorm(n = N)                   # Генерируем ошибку из нормального распределения
 
-beta_2 <- matrix(c(10,12,4,18), nrow=4)
-
-mu <- c(1, 3)                             # Генерируем ошибки из двумерного нормального распределения и задаем коэфф. корреляции                
-sigma <- matrix(c(4,2, 2,3), 
-                nrow=2, ncol=2)
-epsilon <- mvrnorm(n = N, 
-                   mu = mu, Sigma = sigma)
-
-epsilon_1 <- epsilon[, 1]
-epsilon_2 <- epsilon[, 2]
-
-y_star_1 <- as.vector(X_1 %*% beta_1 + epsilon_1)          # Находим вектор у
-y_star_2 <- as.vector(X_2 %*% beta_2 + epsilon_2)
-
-y_star <- cbind(y_star_1, y_star_2)
+y_star <- as.vector(X %*% beta + epsilon) # Находим вектор у
 
 # --------------------------
 
@@ -48,53 +27,40 @@ y_star <- cbind(y_star_1, y_star_2)
 # --------------------------
 # Формируем данные для модели
 
-  rnames = c("b_10","b_11", "b_12", "b_20", "b_21", "b_22", "b_23", "rho",
-             "MSE_b_10", "MSE_b_11", "MSE_b_12", "MSE_b_20", "MSE_b_21", "MSE_b_22", "MSE_b_23", "MSE_rho",
-             "MAPE_b_10", "MAPE_b_11", "MAPE_b_12", "MAPE_b_20", "MAPE_b_21", "MAPE_b_22", "MAPE_b_23", "MAPE_rho")
-  # Создаем пустые датафреймы, в которых будет содержаться информация об оценках беты
-  # и метрики для каждого априорного распределения
-  
-  df_normal <- data.frame(t(rep(0, length(rnames))))
-  names(df_normal) <- rnames
-  df_normal = df_normal[FALSE,]
-  
-  df_student <- data.frame(t(rep(0, length(rnames))))
-  names(df_student) <- rnames
-  df_student = df_student[FALSE,]
-  
-  df_log <- data.frame(t(rep(0, length(rnames))))
-  names(df_log) <- rnames
-  df_log = df_log[FALSE,]
-  
-  df_uniform <- data.frame(t(rep(0, length(rnames))))
-  names(df_uniform) <- rnames
-  df_uniform = df_uniform[FALSE,]
+rnames = c("b_0","b_1", "b_2", 
+           "MSE_b_0", "MSE_b_1", "MSE_b_2", 
+           "MAPE_b_0", "MAPE_b_1", "MAPE_b_2")
 
-data <- list(x_1 = X_1,
-             x_2 = X_2,
-             y = y_star,
-             n = dim(X_1)[1],                 # int<lower=0> n
-             k_1 = dim(X_1)[2],               # int<lower=0> k
-             k_2 = dim(X_2)[2])
+# Создаем пустые датафреймы, в которых будет содержаться информация об оценках беты
+# и метрики для каждого априорного распределения
 
-model_normal <- stan(file = "linreg with normal errors.stan",
-                     data = data,                # входные данные
-                     chains = 1,                 # количество выборок из апостериорного распределения
-                     iter = 2000)                # удвоенный объем выборки из апостериорного распределения
-posterior_normal <- extract(model_normal)
+df_normal <- data.frame(0, 0, 0, 0, 0, 0, 0, 0, 0)
+names(df_normal) <- rnames
+df_normal = df_normal[FALSE,]
 
-model_normal_2 <- stan(file = "linreg with normal errors.stan",
-                     data = data,                # входные данные
-                     chains = 1,                 # количество выборок из апостериорного распределения
-                     iter = 2000)                # удвоенный объем выборки из апостериорного распределения
-posterior_normal_2 <- extract(model_normal_2)
+df_student <- data.frame(0, 0, 0, 0, 0, 0, 0, 0, 0)
+names(df_student) <- rnames
+df_student = df_student[FALSE,]
+
+df_log <- data.frame(0, 0, 0, 0, 0, 0, 0, 0, 0)
+names(df_log) <- rnames
+df_log = df_log[FALSE,]
+
+df_uniform <- data.frame(0, 0, 0, 0, 0, 0, 0, 0, 0)
+names(df_uniform) <- rnames
+df_uniform = df_uniform[FALSE,]
+
+data <- list(x = X,                       # vector[3] x[n]
+             y = y_star,                  # real y[n]
+             n = dim(X)[1],               # int<lower=0> n
+             k = dim(X)[2])               # int<lower=0> k
 
 for (i in 1:n_iters){
 
   model_normal <- stan(file = "linreg with normal errors.stan",
-                       data = data,                # входные данные
-                       chains = 1,                 # количество выборок из апостериорного распределения
-                       iter = 2000)                # удвоенный объем выборки из апостериорного распределения
+                data = data,                # входные данные
+                chains = 1,                 # количество выборок из апостериорного распределения
+                iter = 2000)                # удвоенный объем выборки из апостериорного распределения
   posterior_normal <- extract(model_normal)
   
   model_student <- stan(file = "linreg with student errors.stan",
@@ -117,12 +83,41 @@ for (i in 1:n_iters){
   
   # Подсчет метрик
   #------------------------------------------
-
-  df_normal <- estimations_metrics(df=df_normal, posterior=posterior_normal, k_1=dim(X_1)[2], k_2=dim(X_2)[2])
-  df_student <- estimations_metrics(df=df_student, posterior=posterior_student)
-  df_log <- estimations_metrics(df=df_log, posterior=posterior_log)
-  df_uniform <- estimations_metrics(df=df_uniform, posterior=posterior_uniform)
+  normal_beta = colMeans(posterior_normal$beta)
+  normal_MSE_beta = c(rmse(beta[1], posterior_normal$beta[, 1]),
+               rmse(beta[2], posterior_normal$beta[, 2]),
+               rmse(beta[3], posterior_normal$beta[, 3]))
+  normal_MAPE_beta = c(mape(beta[1], posterior_normal$beta[, 1]),
+                mape(beta[2], posterior_normal$beta[, 2]),
+                mape(beta[3], posterior_normal$beta[, 3]))
+  df_normal <- rbind(df_normal, c(normal_beta, normal_MSE_beta, normal_MAPE_beta))
   
+  student_beta = colMeans(posterior_student$beta)
+  student_MSE_beta = c(rmse(beta[1], posterior_student$beta[, 1]),
+                      rmse(beta[2], posterior_student$beta[, 2]),
+                      rmse(beta[3], posterior_student$beta[, 3]))
+  student_MAPE_beta = c(mape(beta[1], posterior_student$beta[, 1]),
+                       mape(beta[2], posterior_student$beta[, 2]),
+                       mape(beta[3], posterior_student$beta[, 3]))
+  df_student <- rbind(df_student, c(student_beta, student_MSE_beta, student_MAPE_beta))
+  
+  log_beta = colMeans(posterior_log$beta)
+  log_MSE_beta = c(rmse(beta[1], posterior_log$beta[, 1]),
+                      rmse(beta[2], posterior_log$beta[, 2]),
+                      rmse(beta[3], posterior_log$beta[, 3]))
+  log_MAPE_beta = c(mape(beta[1], posterior_log$beta[, 1]),
+                       mape(beta[2], posterior_log$beta[, 2]),
+                       mape(beta[3], posterior_log$beta[, 3]))
+  df_log <- rbind(df_log, c(log_beta, log_MSE_beta, log_MAPE_beta))
+  
+  uniform_beta = colMeans(posterior_uniform$beta)
+  uniform_MSE_beta = c(rmse(beta[1], posterior_uniform$beta[, 1]),
+                      rmse(beta[2], posterior_uniform$beta[, 2]),
+                      rmse(beta[3], posterior_uniform$beta[, 3]))
+  uniform_MAPE_beta = c(mape(beta[1], posterior_uniform$beta[, 1]),
+                       mape(beta[2], posterior_uniform$beta[, 2]),
+                       mape(beta[3], posterior_uniform$beta[, 3]))
+  df_uniform <- rbind(df_uniform, c(uniform_beta, uniform_MSE_beta, uniform_MAPE_beta))
   #------------------------------------------
 }  
 
@@ -131,7 +126,9 @@ names(df_log) <- rnames
 names(df_student) <- rnames
 names(df_uniform) <- rnames
 
-true = c(beta_1, beta_2, sigma[1,2] / (sqrt(sigma[1,1] * sigma[2,2])), rep(0, length(rnames)-length(beta_1)-length(beta_2)-1))
+true = c(beta, 0, 0, 0, 0, 0, 0)
+
+
 
 table = data.frame(true=true,
                    normal=colMeans(df_normal), 

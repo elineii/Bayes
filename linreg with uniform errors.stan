@@ -1,4 +1,3 @@
-// Описываем входные данные
 data {
   int<lower=0> n;                      // число наблюдений
   int<lower=0> k;                      // число предикторов
@@ -15,8 +14,8 @@ parameters {
 // Описываем модель
 model {
   // priors
-  beta ~ normal(0, 50);
-  sigma ~ normal(50, 25);
+  beta ~ uniform(-100, 100);
+  sigma ~ uniform(0, 50);
   // likelihood
   y ~ normal(x * beta, sigma); 
 }
